@@ -13,13 +13,14 @@ import org.apache.spark.api.java.function.PairFunction;
 import scala.Tuple2;
 
 /**
- * Cars Demo App
+ * Movies Demo App
  * @author Ranga Reddy
  * @since 16-4-2017
  * @version 1.0
  */
 public class MoviesDemoApp 
 {
+	private static final String DELIMITER = ",";
 	private static JavaRDD<MoviesData> moviesDataRDD;
 	
     @SuppressWarnings({ "resource", "serial" })
@@ -34,15 +35,16 @@ public class MoviesDemoApp
     		
     	String filePath = args[0];
     	System.out.println("Movies dataset file path "+filePath);
+    	
         SparkConf config = new SparkConf().setAppName("MoviesDemoApp").setIfMissing("spark.master", "local[*]");
-        
         JavaSparkContext sparkContext = new JavaSparkContext(config);
         
-        JavaRDD<String> fileRDD = sparkContext.textFile(filePath);
-        moviesDataRDD = fileRDD.map(new Function<String, MoviesData>() {
+        JavaRDD<String> moviesLinesRDD = sparkContext.textFile(filePath);
+        
+        moviesDataRDD = moviesLinesRDD.map(new Function<String, MoviesData>() {
 			@Override
 			public MoviesData call(String arg0) throws Exception {
-				String movies[] = arg0.split(",");
+				String movies[] = arg0.split(DELIMITER);
 				Integer year = Integer.parseInt(movies[0]);
 				Long length = Long.parseLong(movies[1]);
 				String title = movies[2];
@@ -55,7 +57,6 @@ public class MoviesDemoApp
 				MoviesData moviesData = new MoviesData(year, length, title, subject, actor, actress, director, popularity, award);
 				return moviesData;
 			}
-        	
         });
         
         displayHorrorMovies();
@@ -68,9 +69,10 @@ public class MoviesDemoApp
 	
     @SuppressWarnings("serial")
 	private static void displayHorrorMovies() {
-		// How many horror movies were there between the year 1952 and 1968.
+		
+    	// How many horror movies were there between the year 1952 and 1968.
     	
-    	JavaRDD<MoviesData> filterRDD = moviesDataRDD.filter(new Function<MoviesData, Boolean>() {
+    	JavaRDD<MoviesData> moviesFilterRDD = moviesDataRDD.filter(new Function<MoviesData, Boolean>() {
 			@Override
 			public Boolean call(MoviesData moviesData) throws Exception {
 				Integer year = moviesData.getYear();
@@ -78,38 +80,42 @@ public class MoviesDemoApp
 				return (year >1951 && year < 1969) && "Horror".equals(subject);
 			}
 		});
-    	System.out.println("Horror movies were there b/w year 1952 & 1968 is : \n"+filterRDD.count());
+    	long count = moviesFilterRDD.count();
+    	System.out.println("Horror movies were there b/w year 1952 & 1968 is : \n"+count);
 	}
     
     @SuppressWarnings("serial")
 	private static void displayMoviesReleasedEachYear() {
-		// How many movies were released for each year
+		
+    	// How many movies were released for each year
 		
     	JavaPairRDD<Integer, Integer> moviesPairRDD = moviesDataRDD.mapToPair(new PairFunction<MoviesData, Integer, Integer>() {
 			@Override
-			public Tuple2<Integer, Integer> call(MoviesData arg0) throws Exception {
-				return new Tuple2<Integer, Integer>(arg0.getYear(), 1);
+			public Tuple2<Integer, Integer> call(MoviesData moviesData) throws Exception {
+				return new Tuple2<Integer, Integer>(moviesData.getYear(), 1);
 			}
 		});
     	
-    	JavaPairRDD<Integer, Integer> yearRDD = moviesPairRDD.reduceByKey(new Function2<Integer, Integer, Integer>() {
+    	JavaPairRDD<Integer, Integer> moviesYearReducedRDD = moviesPairRDD.reduceByKey(new Function2<Integer, Integer, Integer>() {
 			@Override
-			public Integer call(Integer arg0, Integer arg1) throws Exception {
-				return arg0 + arg1	;
+			public Integer call(Integer value1, Integer value2) throws Exception {
+				return value1 + value2	;
 			}
     	});
     	
-    	List<Tuple2<Integer, Integer>> releasedData = yearRDD.collect();
-    	System.out.println("Movies released each years is :");
-    	for(Tuple2<Integer, Integer> element : releasedData){
-            System.out.println("("+element._1+", "+element._2+")");
+    	List<Tuple2<Integer, Integer>> moviesReleasedData = moviesYearReducedRDD.collect();
+    	
+    	System.out.println("Movies released each year is :");
+    	for(Tuple2<Integer, Integer> releasedData : moviesReleasedData){
+            System.out.println("("+releasedData._1+", "+releasedData._2+")");
         }
 	}
    
     @SuppressWarnings("serial")
 	private static void displayMovieTitle() {
-		// List the title of the movies whose popularity reach above 60.
 		
+    	// List the title of the movies whose popularity reach above 60.
+    	
     	JavaRDD<MoviesData> moviesPopularityFilterRDD = moviesDataRDD.filter(new Function<MoviesData, Boolean>() {
 			@Override
 			public Boolean call(MoviesData moviesData) throws Exception {
@@ -118,6 +124,7 @@ public class MoviesDemoApp
     	});
     	
     	List<MoviesData> popularityMovies = moviesPopularityFilterRDD.collect();
+    	
     	System.out.println("Title of the movies whose popularity reach above 60.");
     	popularityMovies.forEach(moviesData -> {
     		System.out.println(moviesData.getTitle());
@@ -128,6 +135,7 @@ public class MoviesDemoApp
 	private static void displayActorDetails() {
 		
 		// Find the name of the actor who have worked more than 1 movie.
+    	
 		JavaPairRDD<String, Integer> moviesPairRDD = moviesDataRDD.mapToPair(new PairFunction<MoviesData, String, Integer>() {
 			@Override
 			public Tuple2<String, Integer> call(MoviesData moviesData) throws Exception {
@@ -137,37 +145,39 @@ public class MoviesDemoApp
 		
 		JavaPairRDD<String, Integer> reducedActorRDD = moviesPairRDD.reduceByKey(new Function2<Integer, Integer, Integer>() {
 			@Override
-			public Integer call(Integer arg0, Integer arg1) throws Exception {
-				return arg0 + arg1	;
+			public Integer call(Integer value1, Integer value2) throws Exception {
+				return value1 + value2	;
 			}
     	});
 
 		JavaPairRDD<String, Integer> filteredActorRDD = reducedActorRDD.filter(new Function<Tuple2<String, Integer>, Boolean> () {
 			@Override
-			public Boolean call(Tuple2<String, Integer> arg0) throws Exception {
-				return arg0._2 > 1;
+			public Boolean call(Tuple2<String, Integer> value) throws Exception {
+				return value._2 > 1;
 			}
 		});
 		
-		List<Tuple2<String, Integer>> collectedData = filteredActorRDD.collect();
+		List<Tuple2<String, Integer>> actorsData = filteredActorRDD.collect();
+		
 		System.out.println("Actor(s) who have worked more than 1 movie: ");
-		collectedData.forEach(data -> {
+		actorsData.forEach(data -> {
 			System.out.println(data._1);
 		});
 	}
 	
 	@SuppressWarnings("serial")
 	private static void displayAwardedMovies() {
-		// List the awarded movie director names and title.
 		
+		// List the awarded movie director names and title.
 		JavaRDD<MoviesData> awardMoviesFilterRDD = moviesDataRDD.filter(new Function<MoviesData, Boolean>() {
 			@Override
 			public Boolean call(MoviesData moviesData) throws Exception {
-				return "Yes".equalsIgnoreCase(moviesData.getAward());
+				return "Yes".equals(moviesData.getAward());
 			}
     	});
 		
 		List<MoviesData> awardedMoviesData = awardMoviesFilterRDD.collect();
+		
 		System.out.println("List of awarded movie director names and title : ");
 		awardedMoviesData.forEach(data -> {
 			System.out.println(data.getDirector() +", "+data.getTitle());
@@ -176,6 +186,7 @@ public class MoviesDemoApp
 	
 	@SuppressWarnings("serial")
 	private static void displayMoviesLengthGreaterThan100() {
+		
 		// How many movie’s length greater than 100 min.
 		
 		JavaRDD<MoviesData> moviesLength100FilterRDD = moviesDataRDD.filter(new Function<MoviesData, Boolean>() {
@@ -184,7 +195,8 @@ public class MoviesDemoApp
 				return moviesData.getLength() > 100;
 			}
     	});
+		long count = moviesLength100FilterRDD.count();
 		
-		System.out.println("Movies length greater than 100 min is : \n"+moviesLength100FilterRDD.count());
+		System.out.println("Movies length greater than 100 min is : \n"+count);
 	}
 }
